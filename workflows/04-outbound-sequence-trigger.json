@@ -1,0 +1,281 @@
+{
+  "name": "04 - Outbound Sequence Trigger",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "d1b2c3d4-0001-4001-8001-ddbbcc000001",
+      "name": "Schedule - Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "list",
+        "base": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "filterByFormula": "AND({HITL Status}='approved', {Outreach Status}='queued', {Contacted}=FALSE())",
+        "options": {
+          "maxRecords": 10,
+          "sort": [
+            {
+              "field": "Intent Score",
+              "direction": "desc"
+            }
+          ]
+        }
+      },
+      "id": "d1b2c3d4-0002-4002-8002-ddbbcc000002",
+      "name": "Get Approved Leads",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-leads-01",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "d1b2c3d4-0003-4003-8003-ddbbcc000003",
+      "name": "Any Leads?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.item.json.fields;\nconst firstName = lead['First Name'] || 'there';\nconst company = lead['Company'] || 'your company';\nconst subject = `Re: AI Revenue Automation for ${company}`;\nconst body = `Hi ${firstName},\\n\\nI came across ${company} while researching B2B companies.\\n\\nI recently helped a similar founder recover $1.4M in stalled pipeline using an agentic n8n + Clay system deployed in 72 hours.\\n\\nWorth a 15-minute call this week?\\n\\nCalendly: https://calendly.com/ssam8005/30min\\n\\nSammy Samet\\nAI Revenue Automation Architect & Fractional CTO | myAutoBots.AI`;\nreturn [{json:{...lead, record_id:$input.item.json.id, email_subject:subject, email_body:body, send_to:lead['Enriched Email']}}];"
+      },
+      "id": "d1b2c3d4-0004-4004-8004-ddbbcc000004",
+      "name": "Personalize Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.send_to }}",
+        "subject": "={{ $json.email_subject }}",
+        "emailType": "text",
+        "message": "={{ $json.email_body }}",
+        "options": {
+          "fromName": "Sammy Samet",
+          "replyTo": "ssam8005@gmail.com",
+          "appendAttribution": false
+        }
+      },
+      "id": "d1b2c3d4-0005-4005-8005-ddbbcc000005",
+      "name": "Send Outbound Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        220
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred-01",
+          "name": "Gmail - Sammy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "id": "={{ $json.record_id }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Contacted": true,
+            "Outreach Status": "sent",
+            "First Contact At": "={{ $now.toISO() }}",
+            "Email Subject Sent": "={{ $json.email_subject }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "d1b2c3d4-0006-4006-8006-ddbbcc000006",
+      "name": "Mark Lead Contacted",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1340,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=Outbound sent: {{ $json['First Name'] }} @ {{ $json['Company'] }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "d1b2c3d4-0007-4007-8007-ddbbcc000007",
+      "name": "Telegram Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1560,
+        220
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred-01",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Schedule - Every Hour": {
+      "main": [
+        [
+          {
+            "node": "Get Approved Leads",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Approved Leads": {
+      "main": [
+        [
+          {
+            "node": "Any Leads?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Leads?": {
+      "main": [
+        [
+          {
+            "node": "Personalize Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Personalize Email": {
+      "main": [
+        [
+          {
+            "node": "Send Outbound Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Outbound Email": {
+      "main": [
+        [
+          {
+            "node": "Mark Lead Contacted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Lead Contacted": {
+      "main": [
+        [
+          {
+            "node": "Telegram Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v1-outbound-sequence-2026",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "myautobots-demo"
+  },
+  "id": "wf-004-outbound-sequence",
+  "tags": [
+    {
+      "name": "revenue-automation"
+    },
+    {
+      "name": "outbound"
+    },
+    {
+      "name": "email"
+    }
+  ]
+}

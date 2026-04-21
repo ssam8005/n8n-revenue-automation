@@ -1,0 +1,312 @@
+{
+  "name": "02 - CRM Sync & Write-Back",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-sync",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "b1b2c3d4-0001-4001-8001-bbbbcc000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "search",
+        "filterGroups": {
+          "filterGroupsUi": {
+            "filterGroupValues": [
+              {
+                "filters": {
+                  "filtersUi": {
+                    "filterValues": [
+                      {
+                        "propertyName": "email",
+                        "operator": "EQ",
+                        "value": "={{ $json.enriched_email }}"
+                      }
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "options": {
+          "includeAssociations": false
+        }
+      },
+      "id": "b1b2c3d4-0002-4002-8002-bbbbcc000002",
+      "name": "HubSpot Search Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-hs-01",
+              "leftValue": "={{ $json.results.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "b1b2c3d4-0003-4003-8003-bbbbcc000003",
+      "name": "Contact Exists?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "update",
+        "contactId": "={{ $json.results[0].id }}",
+        "additionalFields": {
+          "jobtitle": "={{ $(\"Webhook\").item.json.enriched_title }}",
+          "linkedin_url": "={{ $(\"Webhook\").item.json.enriched_linkedin }}",
+          "hs_lead_status": "NEW",
+          "lead_enrichment_source": "={{ $(\"Webhook\").item.json.enrichment_source }}",
+          "lead_score": "={{ $(\"Webhook\").item.json.intent_score }}",
+          "notes_last_contacted": "={{ $now.toISO() }}"
+        }
+      },
+      "id": "b1b2c3d4-0004-4004-8004-bbbbcc000004",
+      "name": "HubSpot Update Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        900,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "contact",
+        "operation": "create",
+        "additionalFields": {
+          "email": "={{ $(\"Webhook\").item.json.enriched_email }}",
+          "firstName": "={{ $(\"Webhook\").item.json.first_name }}",
+          "lastName": "={{ $(\"Webhook\").item.json.last_name }}",
+          "company": "={{ $(\"Webhook\").item.json.company }}",
+          "jobtitle": "={{ $(\"Webhook\").item.json.enriched_title }}",
+          "linkedin_url": "={{ $(\"Webhook\").item.json.enriched_linkedin }}",
+          "hs_lead_status": "NEW",
+          "lead_enrichment_source": "={{ $(\"Webhook\").item.json.enrichment_source }}",
+          "lead_score": "={{ $(\"Webhook\").item.json.intent_score }}"
+        }
+      },
+      "id": "b1b2c3d4-0005-4005-8005-bbbbcc000005",
+      "name": "HubSpot Create Contact",
+      "type": "n8n-nodes-base.hubspot",
+      "typeVersion": 2,
+      "position": [
+        900,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "combinationMode": "mergeByPosition",
+        "options": {}
+      },
+      "id": "b1b2c3d4-0006-4006-8006-bbbbcc000006",
+      "name": "Merge",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "CRM Sync Log",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Email": "={{ $(\"Webhook\").item.json.enriched_email }}",
+            "HubSpot ID": "={{ $json.id }}",
+            "Sync Status": "synced",
+            "Synced At": "={{ $now.toISO() }}",
+            "Action": "={{ $(\"Contact Exists?\").item.json.results.length > 0 ? 'updated' : 'created' }}"
+          },
+          "matchingColumns": [
+            "Email"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "b1b2c3d4-0007-4007-8007-bbbbcc000007",
+      "name": "Airtable Sync Log",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"synced\" }",
+        "options": {}
+      },
+      "id": "b1b2c3d4-0008-4008-8008-bbbbcc000008",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Search Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Search Contact": {
+      "main": [
+        [
+          {
+            "node": "Contact Exists?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Contact Exists?": {
+      "main": [
+        [
+          {
+            "node": "HubSpot Update Contact",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HubSpot Create Contact",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Update Contact": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HubSpot Create Contact": {
+      "main": [
+        [
+          {
+            "node": "Merge",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge": {
+      "main": [
+        [
+          {
+            "node": "Airtable Sync Log",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable Sync Log": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v1-crm-sync-writeback-2026",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "myautobots-demo"
+  },
+  "id": "wf-002-crm-sync",
+  "tags": [
+    {
+      "name": "revenue-automation"
+    },
+    {
+      "name": "crm"
+    },
+    {
+      "name": "hubspot"
+    }
+  ]
+}

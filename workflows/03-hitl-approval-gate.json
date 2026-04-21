@@ -1,0 +1,299 @@
+{
+  "name": "03 - HITL Approval Gate",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "hitl-gate",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c1b2c3d4-0001-4001-8001-ccbbcc000001",
+      "name": "Receive Scored Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-msg-01",
+              "name": "approval_message",
+              "value": "=NEW HOT LEAD - APPROVAL REQUIRED\n\n{{ $json.first_name }} {{ $json.last_name }}\n{{ $json.company }} | {{ $json.enriched_title }}\n{{ $json.enriched_email }}\n\nIntent Score: {{ $json.intent_score }}/100 ({{ $json.tier }})\nReason: {{ $json.score_reasoning }}\n\nReply /approve_{{ $json.lead_id }} to trigger outreach\nReply /reject_{{ $json.lead_id }} to skip",
+              "type": "string"
+            },
+            {
+              "id": "set-msg-02",
+              "name": "lead_id",
+              "value": "={{ $json.lead_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "c1b2c3d4-0002-4002-8002-ccbbcc000002",
+      "name": "Format Approval Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.approval_message }}",
+        "additionalFields": {
+          "parse_mode": "Markdown",
+          "disable_web_page_preview": true
+        }
+      },
+      "id": "c1b2c3d4-0003-4003-8003-ccbbcc000003",
+      "name": "Send Telegram Approval",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        680,
+        300
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred-01",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 24,
+        "unit": "hours",
+        "options": {}
+      },
+      "id": "c1b2c3d4-0004-4004-8004-ccbbcc000004",
+      "name": "Wait for Decision",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        300
+      ],
+      "webhookId": "hitl-wait-webhook"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "cond-hitl-01",
+              "leftValue": "={{ $json.decision }}",
+              "rightValue": "approved",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c1b2c3d4-0005-4005-8005-ccbbcc000005",
+      "name": "Approved?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/outbound-sequence",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"lead_id\": \"{{ $(\"Format Approval Message\").item.json.lead_id }}\" }",
+        "options": {}
+      },
+      "id": "c1b2c3d4-0006-4006-8006-ccbbcc000006",
+      "name": "Trigger Outbound Sequence",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "id": "={{ $(\"Receive Scored Lead\").item.json.airtable_record_id }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "HITL Status": "={{ $(\"Approved?\").item.json.decision }}",
+            "HITL Decision At": "={{ $now.toISO() }}",
+            "Outreach Status": "={{ $(\"Approved?\").item.json.decision === 'approved' ? 'queued' : 'rejected' }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "c1b2c3d4-0007-4007-8007-ccbbcc000007",
+      "name": "Airtable Log Decision",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1340,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"gate_passed\" }",
+        "options": {}
+      },
+      "id": "c1b2c3d4-0008-4008-8008-ccbbcc000008",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1560,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Receive Scored Lead": {
+      "main": [
+        [
+          {
+            "node": "Format Approval Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Approval Message": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Approval": {
+      "main": [
+        [
+          {
+            "node": "Wait for Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait for Decision": {
+      "main": [
+        [
+          {
+            "node": "Approved?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Approved?": {
+      "main": [
+        [
+          {
+            "node": "Trigger Outbound Sequence",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Airtable Log Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Outbound Sequence": {
+      "main": [
+        [
+          {
+            "node": "Airtable Log Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable Log Decision": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v1-hitl-approval-gate-2026",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "myautobots-demo"
+  },
+  "id": "wf-003-hitl-gate",
+  "tags": [
+    {
+      "name": "revenue-automation"
+    },
+    {
+      "name": "hitl"
+    },
+    {
+      "name": "telegram"
+    }
+  ]
+}

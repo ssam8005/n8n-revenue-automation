@@ -1,0 +1,356 @@
+{
+  "name": "01 - Lead Enrichment Waterfall",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead-enrich",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0001-4001-8001-aabbcc000001",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.apollo.io/v1/people/match",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "Cache-Control",
+              "value": "no-cache"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"api_key\": \"{{ $env.APOLLO_API_KEY }}\",\n  \"email\": \"{{ $json.email }}\",\n  \"first_name\": \"{{ $json.first_name }}\",\n  \"last_name\": \"{{ $json.last_name }}\",\n  \"organization_name\": \"{{ $json.company }}\"\n}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0002-4002-8002-aabbcc000002",
+      "name": "Apollo Enrich",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "cond-apollo-01",
+              "leftValue": "={{ $json.person.employment_history.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0003-4003-8003-aabbcc000003",
+      "name": "Apollo Hit?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://api.hunter.io/v2/email-finder?domain={{ $(\"Webhook\").item.json.company_domain }}&first_name={{ $(\"Webhook\").item.json.first_name }}&last_name={{ $(\"Webhook\").item.json.last_name }}&api_key={{ $env.HUNTER_API_KEY }}",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0004-4004-8004-aabbcc000004",
+      "name": "Hunter.io Fallback",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-01",
+              "name": "enrichment_source",
+              "value": "apollo",
+              "type": "string"
+            },
+            {
+              "id": "set-02",
+              "name": "enriched_email",
+              "value": "={{ $json.person.email }}",
+              "type": "string"
+            },
+            {
+              "id": "set-03",
+              "name": "enriched_title",
+              "value": "={{ $json.person.title }}",
+              "type": "string"
+            },
+            {
+              "id": "set-04",
+              "name": "enriched_linkedin",
+              "value": "={{ $json.person.linkedin_url }}",
+              "type": "string"
+            },
+            {
+              "id": "set-05",
+              "name": "enriched_seniority",
+              "value": "={{ $json.person.seniority }}",
+              "type": "string"
+            },
+            {
+              "id": "set-06",
+              "name": "enrichment_confidence",
+              "value": "high",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0005-4005-8005-aabbcc000005",
+      "name": "Set Apollo Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-07",
+              "name": "enrichment_source",
+              "value": "hunter",
+              "type": "string"
+            },
+            {
+              "id": "set-08",
+              "name": "enriched_email",
+              "value": "={{ $json.data.email }}",
+              "type": "string"
+            },
+            {
+              "id": "set-09",
+              "name": "enrichment_confidence",
+              "value": "={{ $json.data.score >= 70 ? 'medium' : 'low' }}",
+              "type": "string"
+            },
+            {
+              "id": "set-10",
+              "name": "enriched_title",
+              "value": "={{ $json.data.position }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0006-4006-8006-aabbcc000006",
+      "name": "Set Hunter Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        900,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "base": {
+          "__rl": true,
+          "value": "{{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "id": "={{ $(\"Webhook\").item.json.airtable_record_id }}",
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Enrichment Source": "={{ $json.enrichment_source }}",
+            "Enriched Email": "={{ $json.enriched_email }}",
+            "Title": "={{ $json.enriched_title }}",
+            "LinkedIn URL": "={{ $json.enriched_linkedin }}",
+            "Enrichment Confidence": "={{ $json.enrichment_confidence }}",
+            "Enrichment Status": "complete",
+            "Enriched At": "={{ $now.toISO() }}"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "a1b2c3d4-0007-4007-8007-aabbcc000007",
+      "name": "Airtable Update Lead",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1120,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"enriched\" }",
+        "options": {}
+      },
+      "id": "a1b2c3d4-0008-4008-8008-aabbcc000008",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1340,
+        380
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Apollo Enrich",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apollo Enrich": {
+      "main": [
+        [
+          {
+            "node": "Apollo Hit?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apollo Hit?": {
+      "main": [
+        [
+          {
+            "node": "Set Apollo Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hunter.io Fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hunter.io Fallback": {
+      "main": [
+        [
+          {
+            "node": "Set Hunter Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Apollo Data": {
+      "main": [
+        [
+          {
+            "node": "Airtable Update Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Hunter Data": {
+      "main": [
+        [
+          {
+            "node": "Airtable Update Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable Update Lead": {
+      "main": [
+        [
+          {
+            "node": "Respond OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v1-lead-enrich-waterfall-2026",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "myautobots-demo"
+  },
+  "id": "wf-001-lead-enrich",
+  "tags": [
+    {
+      "name": "revenue-automation"
+    },
+    {
+      "name": "enrichment"
+    },
+    {
+      "name": "clay-n8n"
+    }
+  ]
+}

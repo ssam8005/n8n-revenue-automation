@@ -1,0 +1,376 @@
+{
+  "name": "05 - Intent Scoring Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "score-lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "e1b2c3d4-0001-4001-8001-eebb0c000001",
+      "name": "Receive Lead",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "set-prompt-01",
+              "name": "scoring_prompt",
+              "value": "=You are a B2B sales qualification expert for myAutoBots.AI.\n\nScore the following lead from 0-100 based on fit for the Neural-GTM Sprint ($7,500-$15,000, 72-hour deployment).\n\nLEAD DATA:\n- Name: {{ $json.first_name }} {{ $json.last_name }}\n- Title: {{ $json.enriched_title }}\n- Company: {{ $json.company }}\n- Company Size: {{ $json.company_size }} employees\n- Industry: {{ $json.industry }}\n- Seniority: {{ $json.enriched_seniority }}\n- Tech Stack: {{ $json.tech_stack }}\n- Source: {{ $json.source }}\n- Enrichment Confidence: {{ $json.enrichment_confidence }}\n\nSCORING CRITERIA:\n- Title match (VP Sales, CRO, Founder, CEO, RevOps): +25\n- Company size 50-500 employees: +20\n- Industry (B2B SaaS, HealthTech, FinTech, Prof Services): +20\n- Uses Clay/n8n/HubSpot/Salesforce: +15\n- Decision-maker seniority: +10\n- High enrichment confidence: +10\n\nReturn ONLY valid JSON: {\"score\":<0-100>,\"tier\":\"HOT|WARM|COLD\",\"reasoning\":\"one sentence\",\"recommended_angle\":\"neural-gtm-sprint|architecture-audit|fractional-cto|n8n-specialist\"}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "e1b2c3d4-0002-4002-8002-eebb0c000002",
+      "name": "Build Scoring Prompt",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "={{ $env.ANTHROPIC_API_KEY }}"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-haiku-4-5-20251001\",\n  \"max_tokens\": 256,\n  \"messages\": [{\"role\": \"user\", \"content\": \"{{ $json.scoring_prompt }}\"}]\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "e1b2c3d4-0003-4003-8003-eebb0c000003",
+      "name": "Claude Score Lead",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        680,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "const raw = $input.item.json.content[0].text;\nlet p;\ntry{p=JSON.parse(raw);}catch(e){const m=raw.match(/{[\\s\\S]*}/);p=m?JSON.parse(m[0]):{score:0,tier:'COLD',reasoning:'parse error',recommended_angle:'n8n-specialist'};}\nconst s=Math.min(100,Math.max(0,parseInt(p.score)||0));\nconst t=s>=70?'HOT':s>=45?'WARM':'COLD';\nreturn [{json:{intent_score:s,tier:t,score_reasoning:p.reasoning,recommended_angle:p.recommended_angle,scored_at:new Date().toISOString()}}];"
+      },
+      "id": "e1b2c3d4-0004-4004-8004-eebb0c000004",
+      "name": "Parse Score",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        900,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "rule-hot",
+                    "leftValue": "={{ $json.tier }}",
+                    "rightValue": "HOT",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict"
+                },
+                "conditions": [
+                  {
+                    "id": "rule-warm",
+                    "leftValue": "={{ $json.tier }}",
+                    "rightValue": "WARM",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {
+          "fallbackOutput": "extra"
+        }
+      },
+      "id": "e1b2c3d4-0005-4005-8005-eebb0c000005",
+      "name": "Route by Tier",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1120,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "base": {
+          "__rl": true,
+          "value": "={{ $env.AIRTABLE_BASE_ID }}",
+          "mode": "id"
+        },
+        "table": {
+          "__rl": true,
+          "value": "Leads",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Email": "={{ $(\"Receive Lead\").item.json.enriched_email }}",
+            "Intent Score": "={{ $json.intent_score }}",
+            "Tier": "={{ $json.tier }}",
+            "Score Reasoning": "={{ $json.score_reasoning }}",
+            "Recommended Angle": "={{ $json.recommended_angle }}",
+            "Scored At": "={{ $json.scored_at }}",
+            "HITL Status": "pending"
+          },
+          "matchingColumns": [
+            "Email"
+          ],
+          "schema": []
+        },
+        "options": {}
+      },
+      "id": "e1b2c3d4-0006-4006-8006-eebb0c000006",
+      "name": "Airtable Upsert Lead",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.1,
+      "position": [
+        1340,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.N8N_WEBHOOK_BASE_URL }}/webhook/hitl-gate",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={ \"lead_id\": \"{{ $(\"Airtable Upsert Lead\").item.json.id }}\", \"intent_score\": {{ $(\"Parse Score\").item.json.intent_score }}, \"tier\": \"{{ $(\"Parse Score\").item.json.tier }}\" }",
+        "options": {}
+      },
+      "id": "e1b2c3d4-0007-4007-8007-eebb0c000007",
+      "name": "Trigger HITL Gate",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=HOT Lead: {{ $(\"Receive Lead\").item.json.first_name }} @ {{ $(\"Receive Lead\").item.json.company }} | Score: {{ $(\"Parse Score\").item.json.intent_score }}/100",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "e1b2c3d4-0008-4008-8008-eebb0c000008",
+      "name": "Telegram HOT Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1560,
+        380
+      ],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred-01",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"scored\", \"tier\": \"{{ $(\"Parse Score\").item.json.tier }}\" }",
+        "options": {}
+      },
+      "id": "e1b2c3d4-0009-4009-8009-eebb0c000009",
+      "name": "Respond with Score",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1780,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Receive Lead": {
+      "main": [
+        [
+          {
+            "node": "Build Scoring Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Scoring Prompt": {
+      "main": [
+        [
+          {
+            "node": "Claude Score Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude Score Lead": {
+      "main": [
+        [
+          {
+            "node": "Parse Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Score": {
+      "main": [
+        [
+          {
+            "node": "Route by Tier",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by Tier": {
+      "main": [
+        [
+          {
+            "node": "Airtable Upsert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Airtable Upsert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Airtable Upsert Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Airtable Upsert Lead": {
+      "main": [
+        [
+          {
+            "node": "Trigger HITL Gate",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger HITL Gate": {
+      "main": [
+        [
+          {
+            "node": "Telegram HOT Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram HOT Alert": {
+      "main": [
+        [
+          {
+            "node": "Respond with Score",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "v1-intent-scoring-2026",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "myautobots-demo"
+  },
+  "id": "wf-005-intent-scoring",
+  "tags": [
+    {
+      "name": "revenue-automation"
+    },
+    {
+      "name": "scoring"
+    },
+    {
+      "name": "claude-ai"
+    }
+  ]
+}
