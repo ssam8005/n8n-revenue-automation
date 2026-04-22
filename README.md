@@ -59,14 +59,21 @@ Claude + Pinecone] <--> W05
 
 ## Workflow JSON Exports
 
-Production workflow JSON exports (importable directly into n8n) are planned for a future release. Each JSON will be sanitized — credentials removed, replaced with credential references.
+All 5 production workflow JSON exports are live in the [`workflows/`](./workflows/) folder — importable directly into any n8n instance. Credentials have been sanitized and replaced with named credential references.
 
-**Roadmap:**
-- [ ] `01-lead-enrichment-waterfall.json`
-- [ ] `02-crm-sync-write-back.json`
-- [ ] `03-hitl-approval-gate.json`
-- [ ] `04-outbound-sequence-trigger.json`
-- [ ] `05-intent-scoring-pipeline.json`
+**Import any workflow in 60 seconds:**
+1. Open your n8n instance → **Workflows → Import from file**
+2. Upload the `.json` file
+3. Reconnect credentials in each node (names are pre-labeled)
+4. Activate and test
+
+| Workflow | JSON | Docs |
+|---|---|---|
+| 01 Lead Enrichment Waterfall | [Download](./workflows/01-lead-enrichment-waterfall.json) | [Docs](./workflows/01-lead-enrichment-waterfall.md) |
+| 02 CRM Sync & Write-Back | [Download](./workflows/02-crm-sync-write-back.json) | [Docs](./workflows/02-crm-sync-write-back.md) |
+| 03 HITL Approval Gate | [Download](./workflows/03-hitl-approval-gate.json) | [Docs](./workflows/03-hitl-approval-gate.md) |
+| 04 Outbound Sequence Trigger | [Download](./workflows/04-outbound-sequence-trigger.json) | [Docs](./workflows/04-outbound-sequence-trigger.md) |
+| 05 Intent Scoring Pipeline | [Download](./workflows/05-intent-scoring-pipeline.json) | [Docs](./workflows/05-intent-scoring-pipeline.md) |
 
 ---
 
